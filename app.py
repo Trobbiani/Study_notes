@@ -1,29 +1,46 @@
-import re
+import json
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 notes = Path("notes.md").read_text(encoding="utf-8")
-question = input("Ask about your notes: ").lower()
+question = input("Ask about your notes: ")
 
-stop_words = {"what", "is", "a", "an", "the", "of", "to", "in", "my", "explain"}
-question_words = {
-    word for word in re.findall(r"[a-z0-9]+", question)
-    if word not in stop_words
+payload = {
+    "model": "qwen3:4b",
+    "messages": [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful study tutor. Use the notes as context, but "
+                "also use your general knowledge to explain and reason. Never "
+                "claim the notes say something they do not. Say when you add "
+                "information beyond the notes. Give a concise answer with a "
+                "brief explanation, not a scratchpad."
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"Study notes:\n{notes}\n\nQuestion: {question}",
+        },
+    ],
+    "stream": False,
+    "think": False,
 }
 
-results = []
+request = Request(
+    "http://localhost:11434/api/chat",
+    data=json.dumps(payload).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
 
-for line in notes.splitlines():
-    line_words = set(re.findall(r"[a-z0-9]+", line.lower()))
-    score = len(question_words & line_words)
+with urlopen(request, timeout=180) as response:
+    result = json.load(response)
 
-    if score > 0:
-        results.append((score, line))
+answer = result["message"]["content"]
 
-results.sort(key=lambda result: result[0], reverse=True)
+if "</think>" in answer:
+    answer = answer.rsplit("</think>", 1)[-1].strip()
 
-if results:
-    print("\nMost relevant notes:")
-    for score, line in results[:3]:
-        print(f"- {line}")
-else:
-    print("\nI couldn't find anything relevant in your notes.")
+print("\nAnswer:")
+print(answer)
